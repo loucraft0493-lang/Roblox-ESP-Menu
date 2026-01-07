@@ -1,13 +1,13 @@
--- ESP Menu PRO v6
--- Auteur: Loucraft
+-- ESP Menu PRO v7
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 -- CONFIG
 local espEnabled = true
-local espColor = Color3.fromRGB(255, 0, 0)
+local espColor = Color3.fromRGB(255,0,0)
 local selectedPlayers = {}
 
 -- GUI
@@ -15,7 +15,7 @@ local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 ScreenGui.Name = "ESPMenuPro"
 
 local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.fromOffset(600, 400)
+Frame.Size = UDim2.fromOffset(650, 450)
 Frame.Position = UDim2.fromScale(0.05, 0.1)
 Frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
 Frame.Active = true
@@ -34,7 +34,7 @@ Title.TextScaled = true
 -- Buttons
 local function makeButton(text, posY)
 	local btn = Instance.new("TextButton", Frame)
-	btn.Size = UDim2.fromScale(0.25, 0.08)
+	btn.Size = UDim2.fromScale(0.2, 0.07)
 	btn.Position = UDim2.fromScale(0.03, posY)
 	btn.Text = text
 	btn.Font = Enum.Font.Gotham
@@ -61,49 +61,41 @@ UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	ListFrame.CanvasSize = UDim2.new(0,0,0, UIListLayout.AbsoluteContentSize.Y + 10)
 end)
 
--- ESP logic
+-- ===== ESP Logic =====
 local function clearESP(character)
 	if not character then return end
-	if character:FindFirstChild("HighlightESP") then character.HighlightESP:Destroy() end
-	if character:FindFirstChild("ESPBox") then character.ESPBox:Destroy() end
-	if character:FindFirstChild("NameESP") then character.NameESP:Destroy() end
+	for _,child in ipairs(character:GetChildren()) do
+		if child:IsA("BoxHandleAdornment") or child.Name == "ESPNameBillboard" then
+			child:Destroy()
+		end
+	end
 end
 
 local function applyESP(character, player)
-	if not character then return end
-	clearESP(character)
-	if not espEnabled or not selectedPlayers[player] then return end
-
-	-- Highlight (box)
-	local highlight = Instance.new("Highlight")
-	highlight.Name = "HighlightESP"
-	highlight.FillColor = espColor
-	highlight.OutlineColor = espColor
-	highlight.FillTransparency = 1
-	highlight.OutlineTransparency = 0
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.Parent = character
-
-	-- Box avec SurfaceGuis sur Head/Root
-	local head = character:FindFirstChild("Head")
-	if head then
-		local box = Instance.new("BillboardGui")
-		box.Name = "ESPBox"
-		box.Size = UDim2.new(0, 100, 0, 50)
-		box.StudsOffset = Vector3.new(0,1.5,0)
-		box.AlwaysOnTop = true
-		box.Parent = head
-		local rect = Instance.new("Frame", box)
-		rect.Size = UDim2.new(1,0,1,0)
-		rect.BorderSizePixel = 2
-		rect.BackgroundTransparency = 1
-		rect.BorderColor3 = espColor
+	if not character or not espEnabled or not selectedPlayers[player] then
+		clearESP(character)
+		return
 	end
 
-	-- Name
+	-- Box via BoxHandleAdornment
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local box = Instance.new("BoxHandleAdornment")
+		box.Adornee = hrp
+		box.AlwaysOnTop = true
+		box.Size = hrp.Size + Vector3.new(0.5,0.5,0.5)
+		box.Color3 = espColor
+		box.Transparency = 0.5
+		box.ZIndex = 10
+		box.Name = "ESPBox"
+		box.Parent = hrp
+	end
+
+	-- Name Billboard
+	local head = character:FindFirstChild("Head")
 	if head then
 		local billboard = Instance.new("BillboardGui")
-		billboard.Name = "NameESP"
+		billboard.Name = "ESPNameBillboard"
 		billboard.Size = UDim2.new(0,200,0,40)
 		billboard.StudsOffset = Vector3.new(0,3,0)
 		billboard.AlwaysOnTop = true
@@ -122,10 +114,10 @@ end
 
 local function refreshPlayer(player)
 	if player.Character then
-		if not espEnabled or not selectedPlayers[player] then
-			clearESP(player.Character)
-		else
+		if selectedPlayers[player] then
 			applyESP(player.Character, player)
+		else
+			clearESP(player.Character)
 		end
 	end
 end
@@ -186,14 +178,12 @@ UserInputService.InputBegan:Connect(function(input,gpe)
 	end
 end)
 
--- ====== COLOR PICKER ======
-
-local ColorFrame = Instance.new("Frame", Frame)
-ColorFrame.Size = UDim2.fromOffset(200,200)
-ColorFrame.Position = UDim2.fromScale(0.03, 0.6)
-ColorFrame.BackgroundColor3 = Color3.fromRGB(255,0,0)
-Instance.new("UICorner", ColorFrame)
-ColorFrame.Visible = true
+-- ===== COLOR PICKER =====
+local ColorPickerFrame = Instance.new("Frame", Frame)
+ColorPickerFrame.Size = UDim2.fromOffset(200,200)
+ColorPickerFrame.Position = UDim2.fromScale(0.03,0.6)
+ColorPickerFrame.BackgroundColor3 = espColor
+Instance.new("UICorner", ColorPickerFrame)
 
 local HueBar = Instance.new("Frame", Frame)
 HueBar.Size = UDim2.fromOffset(20,200)
@@ -201,10 +191,14 @@ HueBar.Position = UDim2.fromScale(0.25,0.6)
 HueBar.BackgroundColor3 = Color3.fromRGB(255,0,0)
 Instance.new("UICorner", HueBar)
 
+local draggingHue=false
+local draggingSquare=false
+local currentHue=0
+
 local function HSVtoRGB(h,s,v)
-	local c = v * s
-	local x = c * (1 - math.abs((h/60) % 2 - 1))
-	local m = v - c
+	local c = v*s
+	local x = c*(1-math.abs((h/60)%2-1))
+	local m = v-c
 	local r,g,b=0,0,0
 	if h<60 then r,g,b=c,x,0
 	elseif h<120 then r,g,b=x,c,0
@@ -215,11 +209,7 @@ local function HSVtoRGB(h,s,v)
 	return Color3.new(r+m,g+m,b+m)
 end
 
--- Interactions
-local draggingHue=false
-local draggingSquare=false
-local currentHue=0
-
+-- Events Hue
 HueBar.InputBegan:Connect(function(input)
 	if input.UserInputType==Enum.UserInputType.MouseButton1 then draggingHue=true end
 end)
@@ -227,10 +217,11 @@ HueBar.InputEnded:Connect(function(input)
 	if input.UserInputType==Enum.UserInputType.MouseButton1 then draggingHue=false end
 end)
 
-ColorFrame.InputBegan:Connect(function(input)
+-- Events Saturation/Value square
+ColorPickerFrame.InputBegan:Connect(function(input)
 	if input.UserInputType==Enum.UserInputType.MouseButton1 then draggingSquare=true end
 end)
-ColorFrame.InputEnded:Connect(function(input)
+ColorPickerFrame.InputEnded:Connect(function(input)
 	if input.UserInputType==Enum.UserInputType.MouseButton1 then draggingSquare=false end
 end)
 
@@ -239,14 +230,14 @@ UserInputService.InputChanged:Connect(function(input)
 		local y = math.clamp(input.Position.Y - HueBar.AbsolutePosition.Y,0,200)
 		currentHue = y/200*360
 		HueBar.BackgroundColor3 = HSVtoRGB(currentHue,1,1)
-		ColorFrame.BackgroundColor3 = HSVtoRGB(currentHue,1,1)
+		ColorPickerFrame.BackgroundColor3 = HSVtoRGB(currentHue,1,1)
 	end
 	if draggingSquare then
 		local mouse = UserInputService:GetMouseLocation()
-		local x = math.clamp(mouse.X - ColorFrame.AbsolutePosition.X,0,200)/200
-		local y = math.clamp(mouse.Y - ColorFrame.AbsolutePosition.Y,0,200)/200
+		local x = math.clamp(mouse.X - ColorPickerFrame.AbsolutePosition.X,0,200)/200
+		local y = math.clamp(mouse.Y - ColorPickerFrame.AbsolutePosition.Y,0,200)/200
 		local col = HSVtoRGB(currentHue,x,1-y)
-		ColorFrame.BackgroundColor3 = col
+		ColorPickerFrame.BackgroundColor3 = col
 		espColor = col
 		for _,p in ipairs(Players:GetPlayers()) do refreshPlayer(p) end
 	end
